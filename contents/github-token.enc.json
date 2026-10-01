@@ -1,9 +1,9 @@
 {
-	"version":1,
-	"algorithm":"AES-256-GCM",
-	"kdf":"PBKDF2-SHA-256",
-	"iterations":600000,
-	"salt":"",
-	"iv":"",
-	"data":""
+  "version": 1,
+  "algorithm": "AES-256-GCM",
+  "kdf": "PBKDF2-SHA-256",
+  "iterations": 600000,
+  "salt": "ZCP075I0xO7QMCXbljBHtQ==",
+  "iv": "p+3Dfzl1opwIkeqQ",
+  "data": "PKww52b3mUfK1aWCiSjKxzbRlPpFewY0LNjDvPUZQszvfxoAa4wVmtzxcQZFGqVt0XtdwQ8G0i0wsb3dskeIdqq0b5a8fLp/MDQ4MzKW2tu+GSPktnmYPk6I9uTpnV05gPYIx60N7d/Th+IcaQ=="
 }
