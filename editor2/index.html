@@ -5,65 +5,23 @@
 	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 	<title>CD Editor</title>
 	<style>
-		:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#202020;color:#ddd;font-family:system-ui,-apple-system,Segoe UI,sans-serif}body{overflow:hidden}.editor{display:grid;grid-template-rows:auto minmax(0,1fr);width:100%;height:100%}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;padding:10px;border-bottom:1px solid #3d3d3d;background:#292929}.field{width:100%;height:38px;padding:0 11px;background:#202020;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;outline:none}.field:focus{border-color:#777}.button{height:38px;padding:0 14px;background:#292929;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;cursor:pointer}.button:hover{background:#353535}.text{display:block;width:100%;height:100%;resize:none;padding:16px;background:#202020;border:0;outline:none;color:#ddd;font:14px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.status{position:fixed;left:10px;bottom:10px;padding:6px 9px;background:#292929;border:1px solid #3d3d3d;border-radius:6px;color:#888;font-size:11px;pointer-events:none}@media(max-width:650px){.toolbar{grid-template-columns:1fr 1fr auto;gap:6px;padding:8px}.button{padding:0 10px}.text{padding:14px;font-size:13px}}
+		:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#202020;color:#ddd;font-family:system-ui,-apple-system,Segoe UI,sans-serif}body{overflow:hidden}.editor{display:grid;grid-template-rows:auto minmax(0,1fr);width:100%;height:100%}.toolbar{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #3d3d3d;background:#292929}.field{min-width:0;flex:1;height:38px;padding:0 11px;background:#202020;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;outline:none}.field:focus{border-color:#777}.button{height:38px;padding:0 14px;background:#292929;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;cursor:pointer;white-space:nowrap}.button:hover{background:#353535}.text{display:block;width:100%;height:100%;resize:none;padding:16px;background:#202020;border:0;outline:none;color:#ddd;font:14px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,12px);padding:8px 12px;background:#292929;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;font-size:12px;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.toast.show{opacity:1;transform:translate(-50%,0)}@media(max-width:650px){.toolbar{gap:6px;padding:8px}.button{padding:0 10px}.text{padding:14px;font-size:13px}}
 	</style>
 </head>
 <body>
 <div class="editor">
 	<div class="toolbar">
-		<input id="section" class="field" placeholder="Section" autocomplete="off" spellcheck="false">
-		<input id="contentTitle" class="field" placeholder="Content title" autocomplete="off" spellcheck="false">
+		<input id="title" class="field" placeholder="Title" autocomplete="off" spellcheck="false">
 		<button id="download" class="button" type="button">Download CD</button>
 	</div>
-	<textarea id="source" class="text" spellcheck="false" placeholder="Write your content here…"></textarea>
+	<textarea id="source" class="text" spellcheck="false" placeholder="<section title=&quot;Section&quot;>
+	<content title=&quot;Content&quot;>
+		Write your content here…
+	</content>
+</section>"></textarea>
 </div>
-<div id="status" class="status"></div>
+<div id="toast" class="toast"></div>
 <script src="../js/codec.js"></script>
-<script>
-(()=>{
-	const section=document.getElementById('section');
-	const contentTitle=document.getElementById('contentTitle');
-	const source=document.getElementById('source');
-	const download=document.getElementById('download');
-	const status=document.getElementById('status');
-
-	function filename(sectionTitle,title){
-		const clean=s=>String(s||'').trim().replace(/\s+/g,'').replace(/[^A-Za-z0-9._-]/g,'_').replace(/^\.+/,'');
-		return (clean(sectionTitle)||'Untitled')+'_'+(clean(title)||'Untitled')+'.cd';
-	}
-
-	download.addEventListener('click',()=>{
-		try{
-			const sectionTitle=section.value.trim();
-			const title=contentTitle.value.trim();
-
-			if(!sectionTitle||!title){
-				status.textContent='Section and Content title are required';
-				return;
-			}
-
-			const data={
-				section:sectionTitle,
-				contentTitle:title,
-				title:sectionTitle+'/'+title,
-				source:source.value
-			};
-			const bytes=encode(data);
-			const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
-			const a=document.createElement('a');
-			a.href=url;
-			a.download=filename(sectionTitle,title);
-			document.body.appendChild(a);
-			a.click();
-			a.remove();
-			setTimeout(()=>URL.revokeObjectURL(url),1000);
-			status.textContent='Downloaded '+filename(sectionTitle,title);
-			setTimeout(()=>status.textContent='',1500);
-		}catch(error){
-			status.textContent=error.message||'Could not encode CD';
-		}
-	});
-})();
-</script>
+<script src="./js/main.js"></script>
 </body>
 </html>
