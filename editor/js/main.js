@@ -6,7 +6,7 @@
 	const esc=s=>String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
 
 	function injectBlueprintStyles(){
-		if(document.getElementById('knowledgeBlueprintStyles'))return;
+		if($('knowledgeBlueprintStyles'))return;
 		const style=document.createElement('style');
 		style.id='knowledgeBlueprintStyles';
 		style.textContent=(renderBlueprint||[]).map(x=>typeof x.styling==='string'?x.styling:'').join('\n');
@@ -19,20 +19,7 @@
 		return response;
 	}
 
-	function decodeBase64(value){
-		const binary=atob(String(value||'').replace(/\s/g,''));
-		const bytes=new Uint8Array(binary.length);
-		for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
-		return td.decode(bytes);
-	}
-
-	async function getCollection(username='',token=''){
-		if(username&&token){
-			const file=await github('contents/dataCollection.json',username,token);
-			const data=JSON.parse(decodeBase64(file.content));
-			return Array.isArray(data)?data:[];
-		}
-
+	async function getCollection(){
 		const response=await getRaw('../contents/dataCollection.json');
 		const data=await response.json();
 		return Array.isArray(data)?data:[];
@@ -69,19 +56,13 @@
 		return {owner:GITHUB_CONFIG.owner,repo:GITHUB_CONFIG.repo,branch:GITHUB_CONFIG.branch};
 	}
 
-	async function github(path,username,token,options={}){
+	async function github(path,token,options={}){
 		const repo=repoInfo();
 		const clean=String(path).replace(/^\/+/, '');
 		const url=`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/contents/${clean}`;
-		const headers={
-			'Accept':'application/vnd.github+json',
-			'Authorization':'Bearer '+token,
-			'X-GitHub-Api-Version':'2022-11-28',
-			'Content-Type':'application/json'
-		};
+		const headers={'Accept':'application/vnd.github+json','Authorization':'Bearer '+token,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'};
 		const response=await fetch(url,{...options,headers:{...headers,...(options.headers||{})}});
 		let data=null;
-
 		try{data=await response.json()}catch{}
 		if(!response.ok)throw new Error(data?.message||`GitHub API HTTP ${response.status}`);
 		return data;
@@ -90,29 +71,31 @@
 	function bytesBase64(bytes){
 		let binary='';
 		const chunkSize=0x8000;
-
-		for(let i=0;i<bytes.length;i+=chunkSize){
-			binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunkSize,bytes.length)));
-		}
-
+		for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunkSize,bytes.length)));
 		return btoa(binary);
 	}
 
-	async function fileSha(path,username,token){
-		try{return(await github(path,username,token)).sha}catch(error){if(/Not Found/i.test(error.message))return null;throw error}
+	async function fileSha(path,token){
+		try{return(await github(path,token)).sha}catch(error){if(/Not Found/i.test(error.message))return null;throw error}
 	}
 
-	async function putFile(path,bytes,message,username,token){
+	async function putFile(path,bytes,message,token){
 		const body={message,content:bytesBase64(bytes),branch:repoInfo().branch};
-		const sha=await fileSha(path,username,token);
+		const sha=await fileSha(path,token);
 		if(sha)body.sha=sha;
-		await github(path,username,token,{method:'PUT',body:JSON.stringify(body)});
+		await github(path,token,{method:'PUT',body:JSON.stringify(body)});
 	}
 
-	function filename(title){
-		let name=String(title||'Untitled').trim().replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^\.+/,'').slice(0,100)||'Untitled';
-		if(!/\.cd$/i.test(name))name+='.cd';
-		return name;
+	async function deleteFile(path,message,token){
+		const sha=await fileSha(path,token);
+		if(!sha)return;
+		await github(path,token,{method:'DELETE',body:JSON.stringify({message,sha,branch:repoInfo().branch})});
+	}
+
+	function cdFilename(section,contentTitle){
+		let name=(String(section||'Untitled').trim().replace(/\s+/g,'')+'_'+String(contentTitle||'Untitled').trim().replace(/\s+/g,''));
+		name=name.replace(/[^A-Za-z0-9._-]/g,'_').replace(/^\.+/,'').slice(0,120)||'Untitled_Untitled';
+		return name.endsWith('.cd')?name:name+'.cd';
 	}
 
 	function setupEditor(){
@@ -124,7 +107,8 @@
 		const password=$('password');
 		const loginStatus=$('loginStatus');
 		const editor=$('editorPage');
-		const title=$('editorTitle');
+		const section=$('editorSection');
+		const contentTitle=$('editorContentTitle');
 		const text=$('editorText');
 		const select=$('selectData');
 		const save=$('saveData');
@@ -174,7 +158,7 @@
 			list.innerHTML='<div class="data-empty">Loading…</div>';
 
 			try{
-				const paths=await getCollection(session.username,session.token);
+				const paths=await getCollection();
 				list.innerHTML='';
 
 				if(!paths.length){
@@ -183,8 +167,11 @@
 				}
 
 				paths.forEach(path=>{
+					const row=document.createElement('div');
+					row.className='data-item';
+
 					const button=document.createElement('button');
-					button.className='data-item';
+					button.className='data-select';
 					button.type='button';
 					button.textContent=path;
 
@@ -193,7 +180,18 @@
 
 						try{
 							const data=await getCD(path);
-							title.value=data?.title||String(path).split('/').pop().replace(/\.cd$/i,'');
+							const base=String(path).split('/').pop()?.replace(/\.cd$/i,'')||'';
+							let loadedSection=data?.section||'';
+							let loadedTitle=data?.contentTitle||'';
+
+							if(!loadedSection||!loadedTitle){
+								const parts=base.split('_');
+								if(!loadedSection)loadedSection=parts.shift()||'';
+								if(!loadedTitle)loadedTitle=parts.join('_')||data?.title||base;
+							}
+
+							section.value=loadedSection;
+							contentTitle.value=loadedTitle;
 							text.value=data?.source??data?.content??'';
 							currentFile=String(path).replace(/^\/+/, '');
 							modal.classList.remove('open');
@@ -205,7 +203,45 @@
 						}
 					});
 
-					list.appendChild(button);
+					const deleteButton=document.createElement('button');
+					deleteButton.className='data-delete';
+					deleteButton.type='button';
+					deleteButton.textContent='×';
+					deleteButton.title='Delete';
+
+					deleteButton.addEventListener('click',async()=>{
+						if(!session)return;
+						if(!confirm(`Delete ${path}?\n\nThis will remove the CD file and its entry from dataCollection.json.`))return;
+
+						deleteButton.disabled=true;
+						button.disabled=true;
+						saveStatus.textContent='Deleting…';
+
+						try{
+							const clean=String(path).replace(/^\/+/, '');
+							const collection=await getCollection();
+							const next=collection.filter(item=>String(item).replace(/^\/+/, '')!==clean);
+							await deleteFile('contents/'+clean,`Delete ${clean}`,session.token);
+							await putFile('contents/dataCollection.json',te.encode(JSON.stringify(next,null,2)),`Update dataCollection.json`,session.token);
+
+							if(currentFile===clean){
+								currentFile='';
+								section.value='';
+								contentTitle.value='';
+								text.value='';
+							}
+
+							row.remove();
+							saveStatus.textContent='Deleted';
+						}catch(error){
+							saveStatus.textContent=error.message||'Delete failed';
+							deleteButton.disabled=false;
+							button.disabled=false;
+						}
+					});
+
+					row.append(button,deleteButton);
+					list.appendChild(row);
 				});
 			}catch(error){
 				list.innerHTML=`<div class="data-empty">${esc(error.message)}</div>`;
@@ -220,10 +256,11 @@
 		save.addEventListener('click',async()=>{
 			if(!session)return;
 
-			const value=title.value.trim();
+			const sectionValue=section.value.trim();
+			const contentTitleValue=contentTitle.value.trim();
 
-			if(!value){
-				saveStatus.textContent='Enter a title';
+			if(!sectionValue||!contentTitleValue){
+				saveStatus.textContent='Section and Content title are required';
 				return;
 			}
 
@@ -231,19 +268,19 @@
 			saveStatus.textContent='Saving…';
 
 			try{
-				const name=filename(value);
+				const name=cdFilename(sectionValue,contentTitleValue);
 				const path='contents/'+name;
-				const encoded=encode({title:value,source:text.value});
+				const encoded=encode({section:sectionValue,contentTitle:contentTitleValue,title:sectionValue+'/'+contentTitleValue,source:text.value});
 
-				await putFile(path,encoded,`Save ${name}`,session.username,session.token);
+				await putFile(path,encoded,`Save ${name}`,session.token);
 
-				let collection=await getCollection(session.username,session.token);
+				let collection=await getCollection().catch(()=>[]);
 				if(!Array.isArray(collection))collection=[];
 
 				const entry='/'+name;
-				if(!collection.includes(entry)){
+				if(!collection.some(item=>String(item).replace(/^\/+/, '')===name)){
 					collection.push(entry);
-					await putFile('contents/dataCollection.json',te.encode(JSON.stringify(collection,null,2)),`Update dataCollection.json`,session.username,session.token);
+					await putFile('contents/dataCollection.json',te.encode(JSON.stringify(collection,null,2)),`Update dataCollection.json`,session.token);
 				}
 
 				currentFile=path;
