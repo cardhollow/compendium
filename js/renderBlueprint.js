@@ -75,7 +75,7 @@ const renderBlueprint=[
 {
 	syntax:/<encircle\b([^>]*)>([\s\S]*?)<\/encircle>/gi,
 	styling:`
-.knowledge-encircle{display:inline-block;border:2px solid var(--knowledge-encircle-color,#e05252);border-radius:999px;padding:0 6px;line-height:1.3}
+.knowledge-encircle{position:relative;display:inline-block;padding:0 8px;z-index:0;transform:rotate(-.7deg)}.knowledge-encircle::before,.knowledge-encircle::after{content:"";position:absolute;inset:-4px -8px;border:2px solid var(--knowledge-encircle-color,#e05252);border-radius:47% 53% 52% 48% / 51% 46% 54% 49%;pointer-events:none}.knowledge-encircle::before{transform:rotate(-2deg)}.knowledge-encircle::after{inset:-2px -10px 0 -4px;transform:rotate(2.7deg);opacity:.6}
 `,
 	content:(syntax)=>{
 		const match=syntax.match(/^<encircle\b([^>]*)>([\s\S]*?)<\/encircle>$/i);
