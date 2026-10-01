@@ -5,7 +5,7 @@
 
 	function attributes(s){
 		const result={};
-		String(s??'').replace(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"([^"]*)"/g,(_,key,value)=>{result[key]=value;});
+		String(s??'').replace(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*\"([^\"]*)\"/g,(_,key,value)=>{result[key]=value;});
 		String(s??'').replace(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*'([^']*)'/g,(_,key,value)=>{result[key]=value;});
 		return result;
 	}
@@ -21,7 +21,7 @@
 	}
 
 	function injectBlueprintStyles(){
-		if(document.getElementById('knowledgeBlueprintStyles'))return;
+		if($('knowledgeBlueprintStyles'))return;
 		const style=document.createElement('style');
 		style.id='knowledgeBlueprintStyles';
 		style.textContent=(renderBlueprint||[]).map(x=>typeof x.styling==='string'?x.styling:'').join('\n');
@@ -46,16 +46,18 @@
 		return decode(new Uint8Array(await response.arrayBuffer()));
 	}
 
-	function parseDocument(text){
+	function filenameFromPath(path){
+		return String(path||'').split('/').pop()?.replace(/\.cd$/i,'')||'Untitled';
+	}
+
+	function parseDocument(text,fallbackTitle='Untitled'){
 		const result=[];
 		const root=text.match(/<root\b[^>]*>([\s\S]*?)<\/root>/i);
 		const rootText=root?root[1]:text;
 		const sectionRegex=/<section\b([^>]*)>([\s\S]*?)<\/section>/gi;
 		let sectionMatch;
-		let foundSection=false;
 
 		while(sectionMatch=sectionRegex.exec(rootText)){
-			foundSection=true;
 			const sectionAttributes=attributes(sectionMatch[1]);
 			const section={title:sectionAttributes.title||'Section',items:[]};
 			const contentRegex=/<content\b([^>]*)>([\s\S]*?)<\/content>/gi;
@@ -71,29 +73,67 @@
 				});
 			}
 
-			if(section.items.length)result.push(section);
+			result.push(section);
 		}
 
-		if(foundSection)return result;
-
-		const partsMatch=rootText.match(/<parts\b[^>]*>([\s\S]*?)<\/parts>/i);
-		const contentSource=partsMatch?partsMatch[1]:rootText;
-		const contentRegex=/<content\b([^>]*)>([\s\S]*?)<\/content>/gi;
-		const fallback={title:'Contents',items:[]};
-		let contentMatch;
-
-		while(contentMatch=contentRegex.exec(contentSource)){
-			const contentAttributes=attributes(contentMatch[1]);
-			fallback.items.push({
-				id:contentAttributes.id||`Contents-${fallback.items.length}`,
-				subtitle:contentAttributes.title||`Content ${fallback.items.length+1}`,
-				desc:contentAttributes.desc||'',
-				contents:renderHTML(contentMatch[2])
+		if(!result.length&&String(text??'').trim()){
+			result.push({
+				title:fallbackTitle,
+				items:[{
+					id:`content-${Math.random().toString(36).slice(2)}`,
+					subtitle:fallbackTitle,
+					desc:'',
+					contents:renderHTML(text)
+				}]
 			});
 		}
 
-		if(fallback.items.length)result.push(fallback);
 		return result;
+	}
+
+	function normalizeDecoded(data,path){
+		const source=typeof data==='string'?'':String(data?.source??data?.content??'');
+		const hasMetadata=!!(data&&typeof data==='object'&&(data.section||data.contentTitle));
+		const structured=/<(?:root|section|content)\b/i.test(source);
+
+		if(hasMetadata){
+			const section=String(data.section||'Section');
+			const title=String(data.contentTitle||data.title||filenameFromPath(path));
+			return [{title,items:[{
+				id:String(data.id||path),
+				subtitle:title,
+				desc:String(data.desc||''),
+				contents:renderHTML(source)
+			}],__metadataSection:section}];
+		}
+
+		if(typeof data==='string')return parseDocument(data,filenameFromPath(path));
+		if(structured)return parseDocument(source,filenameFromPath(path));
+		if(source)return parseDocument(source,String(data?.title||filenameFromPath(path)));
+
+		return [];
+	}
+
+	function mergeDecodedDocuments(documents){
+		const sections=[];
+		const bySection=new Map();
+
+		for(const document of documents){
+			for(const sourceSection of document.sections){
+				const title=sourceSection.__metadataSection||sourceSection.title||'Section';
+				let target=bySection.get(title);
+
+				if(!target){
+					target={title,items:[]};
+					bySection.set(title,target);
+					sections.push(target);
+				}
+
+				for(const item of sourceSection.items)target.items.push(item);
+			}
+		}
+
+		return sections;
 	}
 
 	function matches(item,terms){
@@ -198,10 +238,12 @@
 					button.textContent=item.subtitle;
 					button.title=item.desc;
 					button.dataset.contentId=item.id;
+
 					button.addEventListener('click',()=>{
 						selected={si,ii};
 						render();
 					});
+
 					items.appendChild(button);
 				});
 
@@ -236,30 +278,30 @@
 		getCollection().then(async list=>{
 			if(!list.length)throw new Error('dataCollection.json contains no data files.');
 
-			const loaded=[];
+			const documents=[];
 			const errors=[];
+			const seen=new Set();
 
 			for(const path of list){
-				try{
-					const data=await getCD(path);
-					const source=typeof data==='string'?data:data?.source??data?.content??data?.data??'';
-					const parsed=parseDocument(String(source));
+				const clean=String(path||'').replace(/^\/+/, '');
+				if(!clean||seen.has(clean))continue;
+				seen.add(clean);
 
-					if(parsed.some(section=>section.items.length)){
-						loaded.push({path,sections:parsed,title:data?.title||''});
-					}else{
-						errors.push(`${path}: no <content> entries found.`);
-					}
+				try{
+					const data=await getCD(clean);
+					documents.push({path:clean,sections:normalizeDecoded(data,clean)});
 				}catch(error){
-					errors.push(`${path}: ${error.message||String(error)}`);
+					errors.push(`${clean}: ${error.message||error}`);
 				}
 			}
 
-			if(!loaded.length){
-				throw new Error(errors.join(' | ')||'No readable content files found.');
+			sections=mergeDecodedDocuments(documents);
+
+			if(!sections.length){
+				throw new Error(errors.length?`No content could be loaded. ${errors.join(' | ')}`:'No content found in the listed CD files.');
 			}
 
-			sections=loaded.flatMap(file=>file.sections);
+			if(errors.length)console.warn('Some CD files could not be loaded:',errors);
 			render();
 		}).catch(error=>{
 			main.innerHTML=`<div class="knowledge-empty">Could not load the compendium: ${esc(error.message)}</div>`;
