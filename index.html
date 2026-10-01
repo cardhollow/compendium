@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+	<title>My Knowledge & Discoveries</title>
+	<style>
+		:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#202020;color:#ddd;font-family:system-ui,-apple-system,Segoe UI,sans-serif}body{overflow:hidden}.knowledge-app{display:grid;grid-template-rows:auto minmax(0,1fr);width:100%;height:100%}.knowledge-top{padding:10px;border-bottom:1px solid #3d3d3d;background:#292929}.knowledge-search-input{width:100%;height:38px;padding:0 11px;background:#202020;border:1px solid #4b4b4b;border-radius:6px;color:#ddd;outline:none}.knowledge-search-input:focus{border-color:#777}.knowledge-body{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0}.knowledge-nav{min-height:0;overflow:auto;border-right:1px solid #3d3d3d;padding:8px;background:#252525;-webkit-overflow-scrolling:touch}.knowledge-section{margin-bottom:7px}.knowledge-title{width:100%;display:flex;align-items:center;gap:7px;height:32px;padding:0 8px;background:none;border:0;border-radius:5px;color:#bbb;text-align:left;font-weight:600;cursor:pointer}.knowledge-title:hover{background:#333;color:#eee}.knowledge-title .arrow{width:12px;color:#888}.knowledge-items{padding-left:18px}.knowledge-items.hidden{display:none}.knowledge-subtitle{width:100%;display:block;padding:6px 8px;background:none;border:0;border-radius:4px;color:#999;text-align:left;cursor:pointer}.knowledge-subtitle:hover{background:#343434;color:#eee}.knowledge-subtitle.active{background:#3a382d;color:#e4ca4e}.knowledge-empty{padding:20px 10px;color:#777;font-size:12px}.knowledge-main{min-width:0;min-height:0;overflow:auto;padding:22px 24px;-webkit-overflow-scrolling:touch}.knowledge-content-page{display:none;max-width:900px;line-height:1.55}.knowledge-content-page.active{display:block}.knowledge-content-page h1,.knowledge-content-page h2,.knowledge-content-page h3{color:#eee;margin:0 0 12px}.knowledge-content-page p{color:#bbb}.knowledge-content-page code{background:#171717;border:1px solid #3d3d3d;border-radius:4px;padding:1px 4px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}.knowledge-content-page pre{overflow:auto;background:#171717;border:1px solid #3d3d3d;border-radius:6px;padding:10px}
+		@media(max-width:760px){.knowledge-body{grid-template-columns:205px minmax(0,1fr)}.knowledge-main{padding:15px}.knowledge-nav{padding:6px}}
+	</style>
+</head>
+<body>
+	<div id="knowledgeViewer" class="knowledge-app">
+		<div class="knowledge-top"><input id="knowledgeSearch" class="knowledge-search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false"></div>
+		<div class="knowledge-body"><nav id="knowledgeNav" class="knowledge-nav"></nav><main id="knowledgeMain" class="knowledge-main"><article id="knowledgeContent" class="knowledge-content"></article></main></div>
+	</div>
+	<script src="./js/codec.js"></script>
+	<script src="./js/renderBlueprint.js"></script>
+	<script src="./js/main.js"></script>
+</body>
+</html>
