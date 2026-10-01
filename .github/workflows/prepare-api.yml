@@ -1,0 +1,63 @@
+name: Prepare Encrypted API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Encrypt API
+        env:
+          API: ${{ secrets.API }}
+          USERNAME_AND_PASSWORD: ${{ secrets.usernameandpassword }}
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const crypto=require('crypto');
+
+          const api=process.env.API;
+          const credentials=JSON.parse(process.env.USERNAME_AND_PASSWORD);
+          const username=String(credentials.username||'');
+          const password=String(credentials.password||'');
+
+          if(!api)throw new Error('API secret is empty.');
+          if(!username||!password)throw new Error('usernameandpassword must contain username and password.');
+
+          const iterations=600000;
+          const salt=crypto.randomBytes(16);
+          const iv=crypto.randomBytes(12);
+          const key=crypto.pbkdf2Sync(username+'\n'+password,salt,iterations,32,'sha256');
+          const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
+          const encrypted=Buffer.concat([cipher.update(Buffer.from(api,'utf8')),cipher.final(),cipher.getAuthTag()]);
+
+          const output={
+            version:1,
+            algorithm:'AES-256-GCM',
+            kdf:'PBKDF2-SHA-256',
+            iterations,
+            salt:salt.toString('base64'),
+            iv:iv.toString('base64'),
+            data:encrypted.toString('base64')
+          };
+
+          fs.writeFileSync('contents/github-token.enc.json',JSON.stringify(output,null,2)+'\n');
+          NODE
+
+      - name: Commit encrypted API
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add contents/github-token.enc.json
+          if git diff --cached --quiet; then
+            echo "Encrypted API is already up to date."
+            exit 0
+          fi
+          git commit -m "Update encrypted API key"
+          git push
