@@ -68,7 +68,6 @@
 		};
 		const response=await fetch(url,{...options,headers:{...headers,...(options.headers||{})}});
 		let data=null;
-
 		try{data=await response.json()}catch{}
 		if(!response.ok)throw new Error(data?.message||`GitHub API HTTP ${response.status}`);
 		return data;
@@ -77,11 +76,7 @@
 	function bytesBase64(bytes){
 		let binary='';
 		const chunkSize=0x8000;
-
-		for(let i=0;i<bytes.length;i+=chunkSize){
-			binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunkSize,bytes.length)));
-		}
-
+		for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunkSize,bytes.length)));
 		return btoa(binary);
 	}
 
@@ -96,10 +91,21 @@
 		await github(path,username,token,{method:'PUT',body:JSON.stringify(body)});
 	}
 
-	function filename(title){
-		let name=String(title||'Untitled').trim().replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^\.+/,'').slice(0,100)||'Untitled';
-		if(!/\.cd$/i.test(name))name+='.cd';
-		return name;
+	async function deleteFile(path,message,username,token){
+		const sha=await fileSha(path,username,token);
+		if(!sha)return;
+		await github(path,username,token,{method:'DELETE',body:JSON.stringify({message,sha,branch:repoInfo().branch})});
+	}
+
+	function makeFilename(value){
+		const parts=String(value||'').split('/');
+		if(parts.length!==2)return null;
+		const section=parts[0].trim().replace(/\s+/g,'');
+		const contentTitle=parts[1].trim().replace(/\s+/g,'');
+		if(!section||!contentTitle)return null;
+		const cleanPart=value=>value.replace(/[^A-Za-z0-9._-]/g,'_').replace(/^\.+/,'').slice(0,100);
+		const name=`${cleanPart(section)}_${cleanPart(contentTitle)}.cd`;
+		return name||null;
 	}
 
 	function setupEditor(){
@@ -156,8 +162,16 @@
 			if(event.key==='Enter')login.click();
 		});
 
-		select.addEventListener('click',async()=>{
+		function closeDataModal(){
+			modal.classList.remove('open');
+		}
+
+		function openDataModal(){
 			modal.classList.add('open');
+			loadDataList();
+		}
+
+		async function loadDataList(){
 			list.innerHTML='<div class="data-empty">Loading…</div>';
 
 			try{
@@ -170,20 +184,30 @@
 				}
 
 				paths.forEach(path=>{
+					const row=document.createElement('div');
+					row.className='data-row';
+
 					const button=document.createElement('button');
 					button.className='data-item';
 					button.type='button';
 					button.textContent=path;
+
+					const remove=document.createElement('button');
+					remove.className='data-delete';
+					remove.type='button';
+					remove.textContent='×';
+					remove.title='Delete';
 
 					button.addEventListener('click',async()=>{
 						button.disabled=true;
 
 						try{
 							const data=await getCD(path);
-							title.value=data?.title||String(path).split('/').pop().replace(/\.cd$/i,'');
+							if(data&&typeof data==='object'&&typeof data.title==='string'&&data.title.includes('/'))title.value=data.title;
+							else title.value=String(path).split('/').pop().replace(/\.cd$/i,'').replace(/_/,'/');
 							text.value=data?.source??data?.content??'';
 							currentFile=String(path).replace(/^\/+/, '');
-							modal.classList.remove('open');
+							closeDataModal();
 							text.focus();
 						}catch(error){
 							saveStatus.textContent=error.message||'Could not decode file.';
@@ -192,16 +216,62 @@
 						}
 					});
 
-					list.appendChild(button);
+					remove.addEventListener('click',async event=>{
+						event.stopPropagation();
+
+						if(!session)return;
+						if(!confirm(`Delete ${path}?\n\nThis will delete the file and remove it from dataCollection.json.`))return;
+
+						button.disabled=true;
+						remove.disabled=true;
+						remove.textContent='…';
+
+						try{
+							const clean=String(path).replace(/^\/+/, '');
+							await deleteFile('contents/'+clean,`Delete ${clean}`,session.username,session.token);
+
+							const collection=await getCollection();
+							const entry='/'+clean;
+							const updated=collection.filter(item=>String(item)!==entry&&String(item)!==clean);
+
+							if(updated.length!==collection.length){
+								await putFile('contents/dataCollection.json',te.encode(JSON.stringify(updated,null,2)),`Remove ${entry} from dataCollection.json`,session.username,session.token);
+							}
+
+							if(currentFile===clean){
+								currentFile='';
+								title.value='';
+								text.value='';
+							}
+
+							row.remove();
+
+							if(!list.children.length)list.innerHTML='<div class="data-empty">No data files.</div>';
+						}catch(error){
+							saveStatus.textContent=error.message||'Delete failed.';
+							button.disabled=false;
+							remove.disabled=false;
+							remove.textContent='×';
+						}
+					});
+
+					row.append(button,remove);
+					list.appendChild(row);
 				});
 			}catch(error){
 				list.innerHTML=`<div class="data-empty">${esc(error.message)}</div>`;
 			}
+		}
+
+		select.addEventListener('click',openDataModal);
+		close.addEventListener('click',closeDataModal);
+
+		modal.addEventListener('click',event=>{
+			if(event.target===modal)closeDataModal();
 		});
 
-		close.addEventListener('click',()=>modal.classList.remove('open'));
-		modal.addEventListener('click',event=>{
-			if(event.target===modal)modal.classList.remove('open');
+		title.addEventListener('input',()=>{
+			if(title.validity.valid)title.setCustomValidity('');
 		});
 
 		save.addEventListener('click',async()=>{
@@ -209,25 +279,27 @@
 
 			const value=title.value.trim();
 
-			if(!value){
-				saveStatus.textContent='Enter a title';
+			if(!value||!title.checkValidity()||!makeFilename(value)){
+				title.setCustomValidity('Use Section/Content Title.');
+				title.reportValidity();
+				saveStatus.textContent='Use Section/Content Title.';
 				return;
 			}
 
+			title.setCustomValidity('');
 			save.disabled=true;
 			saveStatus.textContent='Saving…';
 
 			try{
-				const name=filename(value);
+				const name=makeFilename(value);
 				const path='contents/'+name;
-				const encoded=encode({title:value,source:text.value});
+				const encoded=encode({title:value,section:value.split('/')[0].trim(),contentTitle:value.split('/')[1].trim(),source:text.value});
 
 				await putFile(path,encoded,`Save ${name}`,session.username,session.token);
 
-				let collection=await getCollection().catch(()=>[]);
-				if(!Array.isArray(collection))collection=[];
-
+				const collection=await getCollection();
 				const entry='/'+name;
+
 				if(!collection.includes(entry)){
 					collection.push(entry);
 					await putFile('contents/dataCollection.json',te.encode(JSON.stringify(collection,null,2)),`Update dataCollection.json`,session.username,session.token);
@@ -237,7 +309,7 @@
 				saveStatus.textContent='Saved';
 				setTimeout(()=>saveStatus.textContent='',1500);
 			}catch(error){
-				saveStatus.textContent=error.message||'Save failed';
+				saveStatus.textContent=error.message||'Save failed.';
 			}finally{
 				save.disabled=false;
 			}
