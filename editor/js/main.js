@@ -1,8 +1,7 @@
 (()=>{
 	const te=new TextEncoder();
 	const td=new TextDecoder();
-	const GITHUB_CONFIG={owner:'',repo:'compendium',branch:'main'};
-	const ENCRYPTED_GITHUB_KEY={salt:'',iv:'',data:''};
+	const GITHUB_CONFIG={owner:'cardhollow',repo:'compendium',branch:'main'};
 	const $=id=>document.getElementById(id);
 	const esc=s=>String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
 
@@ -39,33 +38,26 @@
 		return bytes;
 	}
 
-	async function deriveKey(username,password,salt){
+	async function deriveKey(username,password,salt,iterations){
 		const base=await crypto.subtle.importKey('raw',te.encode(username+'\n'+password),'PBKDF2',false,['deriveKey']);
-		return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:600000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+		return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
 	}
 
-	async function decryptSecret(username,password,box){
+	async function decryptSecret(username,password){
+		const response=await getRaw('../contents/github-token.enc.json');
+		const box=await response.json();
 		if(!box?.salt||!box?.iv||!box?.data)throw new Error('Encrypted GitHub key is not configured.');
-		const key=await deriveKey(username,password,base64Bytes(box.salt));
+		const key=await deriveKey(username,password,base64Bytes(box.salt),Number(box.iterations)||600000);
 		const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:base64Bytes(box.iv)},key,base64Bytes(box.data));
 		return td.decode(plain);
 	}
 
-	function repoInfo(username){
-		const parts=location.pathname.split('/').filter(Boolean);
-		let owner=GITHUB_CONFIG.owner||username;
-		let repo=GITHUB_CONFIG.repo||'Compendium';
-
-		if(location.hostname.endsWith('.github.io')){
-			owner=location.hostname.split('.')[0]||owner;
-			repo=parts[0]||repo;
-		}
-
-		return {owner,repo,branch:GITHUB_CONFIG.branch||'main'};
+	function repoInfo(){
+		return {owner:GITHUB_CONFIG.owner,repo:GITHUB_CONFIG.repo,branch:GITHUB_CONFIG.branch};
 	}
 
 	async function github(path,username,token,options={}){
-		const repo=repoInfo(username);
+		const repo=repoInfo();
 		const clean=String(path).replace(/^\/+/, '');
 		const url=`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/contents/${clean}`;
 		const headers={
@@ -98,7 +90,7 @@
 	}
 
 	async function putFile(path,bytes,message,username,token){
-		const body={message,content:bytesBase64(bytes),branch:repoInfo(username).branch};
+		const body={message,content:bytesBase64(bytes),branch:repoInfo().branch};
 		const sha=await fileSha(path,username,token);
 		if(sha)body.sha=sha;
 		await github(path,username,token,{method:'PUT',body:JSON.stringify(body)});
@@ -148,7 +140,7 @@
 			loginStatus.textContent='Unlocking…';
 
 			try{
-				const token=await decryptSecret(user,pass,ENCRYPTED_GITHUB_KEY);
+				const token=await decryptSecret(user,pass);
 				if(!token)throw new Error('The decrypted GitHub key is empty.');
 				session={username:user,token};
 				overlay.style.display='none';
