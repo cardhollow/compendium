@@ -52,8 +52,10 @@
 		const rootText=root?root[1]:text;
 		const sectionRegex=/<section\b([^>]*)>([\s\S]*?)<\/section>/gi;
 		let sectionMatch;
+		let foundSection=false;
 
 		while(sectionMatch=sectionRegex.exec(rootText)){
+			foundSection=true;
 			const sectionAttributes=attributes(sectionMatch[1]);
 			const section={title:sectionAttributes.title||'Section',items:[]};
 			const contentRegex=/<content\b([^>]*)>([\s\S]*?)<\/content>/gi;
@@ -69,9 +71,28 @@
 				});
 			}
 
-			result.push(section);
+			if(section.items.length)result.push(section);
 		}
 
+		if(foundSection)return result;
+
+		const partsMatch=rootText.match(/<parts\b[^>]*>([\s\S]*?)<\/parts>/i);
+		const contentSource=partsMatch?partsMatch[1]:rootText;
+		const contentRegex=/<content\b([^>]*)>([\s\S]*?)<\/content>/gi;
+		const fallback={title:'Contents',items:[]};
+		let contentMatch;
+
+		while(contentMatch=contentRegex.exec(contentSource)){
+			const contentAttributes=attributes(contentMatch[1]);
+			fallback.items.push({
+				id:contentAttributes.id||`Contents-${fallback.items.length}`,
+				subtitle:contentAttributes.title||`Content ${fallback.items.length+1}`,
+				desc:contentAttributes.desc||'',
+				contents:renderHTML(contentMatch[2])
+			});
+		}
+
+		if(fallback.items.length)result.push(fallback);
 		return result;
 	}
 
@@ -214,9 +235,31 @@
 
 		getCollection().then(async list=>{
 			if(!list.length)throw new Error('dataCollection.json contains no data files.');
-			const data=await getCD(list[0]);
-			const source=typeof data==='string'?data:data?.source??data?.content??'';
-			sections=parseDocument(source);
+
+			const loaded=[];
+			const errors=[];
+
+			for(const path of list){
+				try{
+					const data=await getCD(path);
+					const source=typeof data==='string'?data:data?.source??data?.content??data?.data??'';
+					const parsed=parseDocument(String(source));
+
+					if(parsed.some(section=>section.items.length)){
+						loaded.push({path,sections:parsed,title:data?.title||''});
+					}else{
+						errors.push(`${path}: no <content> entries found.`);
+					}
+				}catch(error){
+					errors.push(`${path}: ${error.message||String(error)}`);
+				}
+			}
+
+			if(!loaded.length){
+				throw new Error(errors.join(' | ')||'No readable content files found.');
+			}
+
+			sections=loaded.flatMap(file=>file.sections);
 			render();
 		}).catch(error=>{
 			main.innerHTML=`<div class="knowledge-empty">Could not load the compendium: ${esc(error.message)}</div>`;
